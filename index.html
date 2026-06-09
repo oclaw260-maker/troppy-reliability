@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Troppy — Reliability Dashboard | May 2026</title>
+<meta name="description" content="Troppy site maintenance reliability report — May 2026. Executive view of fleet downtime, breakdown trends, and asset performance." />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0a0d12;
+    --panel: #121821;
+    --panel-2: #1a2230;
+    --border: #1f2937;
+    --text: #e5e7eb;
+    --muted: #94a3b8;
+    --accent: #f59e0b;
+    --green: #10b981;
+    --red: #ef4444;
+    --orange: #f97316;
+    --blue: #3b82f6;
+    --purple: #a855f7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at 20% 0%, rgba(245,158,11,0.06), transparent 40%),
+      radial-gradient(circle at 80% 100%, rgba(59,130,246,0.05), transparent 50%);
+  }
+  .wrap { max-width: 1400px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  /* HEADER */
+  header {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    flex-wrap: wrap; gap: 1rem;
+    padding-bottom: 1.5rem; border-bottom: 1px solid var(--border); margin-bottom: 2rem;
+  }
+  .brand { display: flex; align-items: center; gap: 0.85rem; }
+  .logo {
+    width: 44px; height: 44px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), #b45309);
+    display: grid; place-items: center; font-size: 1.4rem; font-weight: 800; color: #111;
+  }
+  h1 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); font-size: 0.9rem; margin-top: 0.15rem; }
+  .meta {
+    text-align: right; color: var(--muted); font-size: 0.85rem;
+    display: flex; flex-direction: column; gap: 0.15rem;
+  }
+  .meta strong { color: var(--text); font-size: 1rem; }
+
+  /* STATUS BAR */
+  .status-bar {
+    display: flex; gap: 1rem; flex-wrap: wrap; align-items: center;
+    background: var(--panel); border: 1px solid var(--border);
+    padding: 0.85rem 1.25rem; border-radius: 12px; margin-bottom: 1.5rem;
+    font-size: 0.85rem;
+  }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 0.45rem;
+    padding: 0.3rem 0.75rem; border-radius: 999px;
+    background: var(--panel-2); color: var(--muted);
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  .dot.red { background: var(--red); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+  /* KPI CARDS */
+  .kpis {
+    display: grid; gap: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    margin-bottom: 2rem;
+  }
+  .kpi {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 1.25rem 1.4rem;
+    position: relative; overflow: hidden;
+    transition: transform 0.15s, border-color 0.15s;
+  }
+  .kpi:hover { transform: translateY(-2px); border-color: #2d3a4f; }
+  .kpi::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: var(--accent);
+  }
+  .kpi.red::before { background: var(--red); }
+  .kpi.green::before { background: var(--green); }
+  .kpi.blue::before { background: var(--blue); }
+  .kpi.purple::before { background: var(--purple); }
+  .kpi-label {
+    color: var(--muted); font-size: 0.78rem;
+    text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
+  }
+  .kpi-value {
+    font-size: 2.3rem; font-weight: 800; margin: 0.4rem 0 0.3rem;
+    letter-spacing: -0.03em;
+  }
+  .kpi-delta { font-size: 0.85rem; color: var(--muted); }
+  .kpi-delta.warn { color: var(--orange); }
+  .kpi-delta.bad { color: var(--red); }
+  .kpi-delta.good { color: var(--green); }
+
+  /* GRID */
+  .grid {
+    display: grid; gap: 1.25rem; margin-bottom: 1.5rem;
+    grid-template-columns: repeat(12, 1fr);
+  }
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 14px; padding: 1.4rem;
+  }
+  .card-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1.2rem;
+  }
+  .card-title { font-size: 1rem; font-weight: 700; letter-spacing: -0.01em; }
+  .card-tag { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+  .col-4 { grid-column: span 4; }
+  .col-5 { grid-column: span 5; }
+  .col-6 { grid-column: span 6; }
+  .col-7 { grid-column: span 7; }
+  .col-8 { grid-column: span 8; }
+  .col-12 { grid-column: span 12; }
+  @media (max-width: 900px) {
+    .col-4, .col-5, .col-6, .col-7, .col-8 { grid-column: span 12; }
+  }
+
+  .chart-box { position: relative; height: 280px; }
+  .chart-box.tall { height: 340px; }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 0.7rem 0.5rem; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--panel-2); }
+  .num { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .badge {
+    display: inline-block; padding: 0.15rem 0.5rem; border-radius: 6px;
+    font-size: 0.72rem; font-weight: 700;
+  }
+  .badge.bd { background: rgba(239,68,68,0.15); color: #fca5a5; }
+  .badge.pm { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+  .badge.co { background: rgba(249,115,22,0.15); color: #fdba74; }
+  .badge.cc { background: rgba(168,85,247,0.15); color: #d8b4fe; }
+
+  /* FLEET ROWS */
+  .fleet-row {
+    display: flex; align-items: center; gap: 1rem; padding: 0.7rem 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .fleet-row:last-child { border-bottom: none; }
+  .fleet-icon {
+    width: 38px; height: 38px; border-radius: 8px; background: var(--panel-2);
+    display: grid; place-items: center; font-size: 1.2rem;
+  }
+  .fleet-name { font-weight: 600; }
+  .fleet-sub { color: var(--muted); font-size: 0.78rem; }
+  .fleet-bar { flex: 1; height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; }
+  .fleet-bar-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #d97706); border-radius: 4px; }
+  .fleet-hrs { font-variant-numeric: tabular-nums; font-weight: 700; min-width: 80px; text-align: right; }
+
+  /* FOOTER */
+  footer {
+    margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 0.8rem; text-align: center;
+  }
+
+  /* INSIGHT BOX */
+  .insight {
+    background: linear-gradient(135deg, rgba(239,68,68,0.08), rgba(245,158,11,0.05));
+    border: 1px solid rgba(239,68,68,0.25);
+    border-radius: 12px; padding: 1.1rem 1.3rem; margin-bottom: 1.5rem;
+  }
+  .insight-title { font-weight: 700; margin-bottom: 0.4rem; color: #fca5a5; }
+  .insight-text { font-size: 0.92rem; color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <div class="logo">T</div>
+      <div>
+        <h1>Troppy — Reliability Dashboard</h1>
+        <div class="sub">Maintenance performance review · Executive view</div>
+      </div>
+    </div>
+    <div class="meta">
+      <div><strong>May 2026</strong></div>
+      <div>Reporting period: 01 – 31 May 2026</div>
+      <div>Source: SAP PM · 630 work orders</div>
+    </div>
+  </header>
+
+  <div class="status-bar">
+    <span class="status-pill"><span class="dot red"></span> Action required</span>
+    <span class="status-pill">📍 Site: Troppy</span>
+    <span class="status-pill">🔧 3 fleet classes</span>
+    <span class="status-pill">📅 31 days</span>
+  </div>
+
+  <div class="insight">
+    <div class="insight-title">⚠ Headline</div>
+    <div class="insight-text">
+      <strong>42.6%</strong> of all maintenance hours in May were reactive (breakdown). With 466 breakdown orders against only 141 planned PMs, the ratio is roughly <strong>3.3 breakdowns per PM</strong> — a strong signal that preventive coverage is under-resourced or scheduled too far apart. <strong>Loaders</strong> dominate downtime (1,937 hrs, 41% of total).
+    </div>
+  </div>
+
+  <!-- KPI ROW -->
+  <div class="kpis">
+    <div class="kpi">
+      <div class="kpi-label">Total Work Orders</div>
+      <div class="kpi-value">630</div>
+      <div class="kpi-delta">across 3 fleet classes</div>
+    </div>
+    <div class="kpi blue">
+      <div class="kpi-label">Total Downtime</div>
+      <div class="kpi-value">4,762<span style="font-size:1.1rem;color:var(--muted);"> hrs</span></div>
+      <div class="kpi-delta">≈ 198 days of equipment-off</div>
+    </div>
+    <div class="kpi red">
+      <div class="kpi-label">Breakdown Share</div>
+      <div class="kpi-value">42.6<span style="font-size:1.1rem;color:var(--muted);">%</span></div>
+      <div class="kpi-delta bad">466 reactive orders · 2,031 hrs</div>
+    </div>
+    <div class="kpi green">
+      <div class="kpi-label">PM Coverage</div>
+      <div class="kpi-value">44.2<span style="font-size:1.1rem;color:var(--muted);">%</span></div>
+      <div class="kpi-delta">141 preventive orders · 2,104 hrs</div>
+    </div>
+    <div class="kpi purple">
+      <div class="kpi-label">MTTR (Breakdown)</div>
+      <div class="kpi-value">4.4<span style="font-size:1.1rem;color:var(--muted);"> hrs</span></div>
+      <div class="kpi-delta warn">avg time-to-repair</div>
+    </div>
+  </div>
+
+  <!-- ROW 1: TREND + MIX -->
+  <div class="grid">
+    <div class="card col-8">
+      <div class="card-head">
+        <div class="card-title">Daily Downtime Trend</div>
+        <div class="card-tag">Hours per day · all classes</div>
+      </div>
+      <div class="chart-box tall"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="card col-4">
+      <div class="card-head">
+        <div class="card-title">Maintenance Mix</div>
+        <div class="card-tag">By hours</div>
+      </div>
+      <div class="chart-box tall"><canvas id="mixChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ROW 2: FLEET + TOP BY HRS -->
+  <div class="grid">
+    <div class="card col-5">
+      <div class="card-head">
+        <div class="card-title">Fleet Performance</div>
+        <div class="card-tag">Downtime hours</div>
+      </div>
+      <div id="fleetList"></div>
+    </div>
+    <div class="card col-7">
+      <div class="card-head">
+        <div class="card-title">Top Equipment · Total Downtime</div>
+        <div class="card-tag">Top 10 assets</div>
+      </div>
+      <div class="chart-box"><canvas id="topEqChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ROW 3: TOP BREAKDOWN ASSETS + WORST ORDERS -->
+  <div class="grid">
+    <div class="card col-6">
+      <div class="card-head">
+        <div class="card-title">Top Breakdown Offenders</div>
+        <div class="card-tag">Most reactive orders</div>
+      </div>
+      <div class="chart-box"><canvas id="topBdChart"></canvas></div>
+    </div>
+    <div class="card col-6">
+      <div class="card-head">
+        <div class="card-title">Longest Single Jobs</div>
+        <div class="card-tag">Highest downtime events</div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Order</th><th>Description</th><th>Asset</th><th style="text-align:right;">Hrs</th></tr>
+        </thead>
+        <tbody id="worstTable"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    Generated <span id="genDate"></span> · Source data: <code>Export</code> sheet, 630 orders · Troppy May 2026 reporting period.
+  </footer>
+</div>
+
+<script>
+const DATA = {"kpi": {"total_orders": 630, "total_hrs": 4762.5, "breakdown_orders": 466, "breakdown_hrs": 2030.8, "breakdown_pct": 42.6, "pm_pct": 44.2, "mttr": 4.4}, "type_breakdown": [{"label": "Breakdown (61)", "orders": 466, "hrs": 2030.8}, {"label": "Preventive (22)", "orders": 141, "hrs": 2103.5}, {"label": "Corrective (51)", "orders": 22, "hrs": 364.1}, {"label": "Component Change (31)", "orders": 1, "hrs": 264.0}], "fleet_dur": {"Trucks": 1264.1299999999999, "Loaders": 1936.6799999999987, "Drills": 1561.6699999999998}, "fleet_cnt": {"Trucks": 134, "Loaders": 224, "Drills": 272}, "top_eq": [{"eq": "TD0410", "hrs": 430.1}, {"eq": "LO0562", "hrs": 316.5}, {"eq": "LO0561", "hrs": 281.7}, {"eq": "LO0567", "hrs": 199.2}, {"eq": "DR0088", "hrs": 197.6}, {"eq": "LO0492", "hrs": 185.6}, {"eq": "LO0456", "hrs": 184.0}, {"eq": "LO0563", "hrs": 178.9}, {"eq": "LO0449", "hrs": 176.6}, {"eq": "LO0559", "hrs": 162.6}], "top_eq_bd": [{"eq": "DR0088", "count": 31}, {"eq": "DR3244", "count": 27}, {"eq": "DR3266", "count": 24}, {"eq": "DR0087", "count": 23}, {"eq": "LO0563", "count": 23}, {"eq": "LO0449", "count": 20}, {"eq": "LO0559", "count": 20}, {"eq": "DR3251", "count": 19}, {"eq": "LO0456", "count": 19}, {"eq": "LO0561", "count": 16}], "daily": [{"d": "2026-05-01", "h": 679.3}, {"d": "2026-05-02", "h": 376.9}, {"d": "2026-05-03", "h": 112.3}, {"d": "2026-05-04", "h": 115.9}, {"d": "2026-05-05", "h": 75.4}, {"d": "2026-05-06", "h": 96.7}, {"d": "2026-05-07", "h": 95.4}, {"d": "2026-05-08", "h": 116.4}, {"d": "2026-05-09", "h": 76.4}, {"d": "2026-05-10", "h": 106.7}, {"d": "2026-05-11", "h": 63.7}, {"d": "2026-05-12", "h": 66.8}, {"d": "2026-05-13", "h": 116.6}, {"d": "2026-05-14", "h": 179.4}, {"d": "2026-05-15", "h": 69.5}, {"d": "2026-05-16", "h": 109.5}, {"d": "2026-05-17", "h": 280.0}, {"d": "2026-05-18", "h": 214.6}, {"d": "2026-05-19", "h": 85.1}, {"d": "2026-05-20", "h": 370.5}, {"d": "2026-05-21", "h": 100.8}, {"d": "2026-05-22", "h": 253.4}, {"d": "2026-05-23", "h": 72.6}, {"d": "2026-05-24", "h": 101.3}, {"d": "2026-05-25", "h": 68.9}, {"d": "2026-05-26", "h": 254.2}, {"d": "2026-05-27", "h": 113.0}, {"d": "2026-05-28", "h": 92.3}, {"d": "2026-05-29", "h": 95.7}, {"d": "2026-05-30", "h": 123.0}, {"d": "2026-05-31", "h": 79.6}], "worst": [{"id": 4662913, "desc": "12000H ARTIC TRUCK LARGE ENGINE", "eq": "TD0410", "dur": 264.0, "cmt": "WOP"}, {"id": 4949780, "desc": "DRIVELINE FAULT", "eq": "LO0562", "dur": 191.55, "cmt": "WOP - INSPECTED BOTH P1 & P2 WHEEL END, BOTH OK"}, {"id": 4874140, "desc": "LB_OVERHAUL CENTRE HITCH", "eq": "LO0561", "dur": 148.43, "cmt": "TOP BEARINGS BURRED, CLEANED UP. SHIMS DONE. READY TO ASSEMBLE"}, {"id": 4952529, "desc": "COOLER FAN FAULT", "eq": "LO0567", "dur": 123.3, "cmt": "WOP, WARRANTY"}, {"id": 4946997, "desc": "CABLE REEL FAULT", "eq": "DR0088", "dur": 85.23, "cmt": "WOP"}, {"id": 4907792, "desc": "250H PM SERVICE (@17,250)", "eq": "TD0410", "dur": 77.87, "cmt": "WOP"}, {"id": 4945694, "desc": "COOLING SYSTEM CONTAMINATION", "eq": "TD0410", "dur": 56.61, "cmt": "WOP"}, {"id": 4931354, "desc": "4000H PM SERVICE LH621i (@19,158)", "eq": "LO0456", "dur": 48.6, "cmt": "SERVICE IS COMPLETE, FINISH OFF AFF AND ASSESORIES"}], "site": "Troppy", "period": "May 2026"};
+
+// ─── FLEET LIST ───────────────────────────────────────────────
+const fleetIcons = { Trucks: '🚛', Loaders: '⚙️', Drills: '🛠️' };
+const maxFleetHrs = Math.max(...Object.values(DATA.fleet_dur));
+const fleetList = document.getElementById('fleetList');
+Object.entries(DATA.fleet_dur)
+  .sort((a, b) => b[1] - a[1])
+  .forEach(([name, hrs]) => {
+    const pct = (hrs / maxFleetHrs) * 100;
+    const orders = DATA.fleet_cnt[name] || 0;
+    fleetList.insertAdjacentHTML('beforeend', `
+      <div class="fleet-row">
+        <div class="fleet-icon">${fleetIcons[name] || '•'}</div>
+        <div style="flex:0 0 90px;">
+          <div class="fleet-name">${name}</div>
+          <div class="fleet-sub">${orders} orders</div>
+        </div>
+        <div class="fleet-bar"><div class="fleet-bar-fill" style="width:${pct}%"></div></div>
+        <div class="fleet-hrs">${hrs.toFixed(0)} hrs</div>
+      </div>
+    `);
+  });
+
+// ─── WORST TABLE ─────────────────────────────────────────────
+const worstBody = document.getElementById('worstTable');
+DATA.worst.forEach(w => {
+  worstBody.insertAdjacentHTML('beforeend', `
+    <tr>
+      <td class="num">#${w.id}</td>
+      <td>${w.desc}${w.cmt ? `<div style="color:var(--muted);font-size:0.78rem;margin-top:2px;">${w.cmt}</div>` : ''}</td>
+      <td><strong>${w.eq}</strong></td>
+      <td class="num" style="text-align:right;color:#fca5a5;">${w.dur.toFixed(1)}</td>
+    </tr>
+  `);
+});
+
+// ─── CHARTS ──────────────────────────────────────────────────
+Chart.defaults.color = '#94a3b8';
+Chart.defaults.borderColor = '#1f2937';
+Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif';
+
+const palette = {
+  red: '#ef4444', orange: '#f97316', amber: '#f59e0b',
+  green: '#10b981', blue: '#3b82f6', purple: '#a855f7',
+  pink: '#ec4899', teal: '#14b8a6'
+};
+
+// Trend
+new Chart(document.getElementById('trendChart'), {
+  type: 'line',
+  data: {
+    labels: DATA.daily.map(d => d.d.slice(5)),
+    datasets: [{
+      label: 'Hours',
+      data: DATA.daily.map(d => d.h),
+      borderColor: palette.amber,
+      backgroundColor: 'rgba(245,158,11,0.15)',
+      fill: true, tension: 0.35, pointRadius: 2, pointHoverRadius: 5,
+      borderWidth: 2
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+    scales: {
+      x: { grid: { display: false } },
+      y: { beginAtZero: true, grid: { color: '#1f2937' }, ticks: { callback: v => v + 'h' } }
+    }
+  }
+});
+
+// Mix donut
+const typeColors = [palette.red, palette.green, palette.orange, palette.purple];
+new Chart(document.getElementById('mixChart'), {
+  type: 'doughnut',
+  data: {
+    labels: DATA.type_breakdown.map(t => t.label),
+    datasets: [{
+      data: DATA.type_breakdown.map(t => t.hrs),
+      backgroundColor: typeColors,
+      borderColor: '#121821', borderWidth: 3
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    cutout: '65%',
+    plugins: {
+      legend: { position: 'bottom', labels: { padding: 12, boxWidth: 12, font: { size: 11 } } },
+      tooltip: { callbacks: { label: ctx => {
+        const v = ctx.parsed; const t = v / DATA.kpi.total_hrs * 100;
+        return ` ${ctx.label}: ${v.toFixed(0)}h (${t.toFixed(1)}%)`;
+      }}}
+    }
+  }
+});
+
+// Top equipment
+new Chart(document.getElementById('topEqChart'), {
+  type: 'bar',
+  data: {
+    labels: DATA.top_eq.map(e => e.eq),
+    datasets: [{
+      label: 'Hours',
+      data: DATA.top_eq.map(e => e.hrs),
+      backgroundColor: DATA.top_eq.map((_, i) => i === 0 ? palette.red : i < 3 ? palette.orange : palette.amber),
+      borderRadius: 4
+    }]
+  },
+  options: {
+    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: '#1f2937' }, ticks: { callback: v => v + 'h' } },
+      y: { grid: { display: false } }
+    }
+  }
+});
+
+// Top breakdown offenders
+new Chart(document.getElementById('topBdChart'), {
+  type: 'bar',
+  data: {
+    labels: DATA.top_eq_bd.map(e => e.eq),
+    datasets: [{
+      label: 'Breakdown orders',
+      data: DATA.top_eq_bd.map(e => e.count),
+      backgroundColor: DATA.top_eq_bd.map((_, i) => i === 0 ? palette.red : i < 3 ? palette.orange : palette.pink),
+      borderRadius: 4
+    }]
+  },
+  options: {
+    indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: '#1f2937' }, ticks: { stepSize: 5 } },
+      y: { grid: { display: false } }
+    }
+  }
+});
+
+document.getElementById('genDate').textContent = new Date().toISOString().slice(0, 10);
+</script>
+</body>
+</html>
