@@ -183,6 +183,36 @@
   }
   .filter-reset.show { display: inline-block; }
 
+  /* ACTIVE FILTER BREADCRUMB */
+  .filter-bar {
+    display: none; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    background: var(--panel-2); border: 1px solid var(--border);
+    padding: 0.6rem 1rem; border-radius: 10px; margin-bottom: 1.5rem;
+    font-size: 0.85rem;
+  }
+  .filter-bar.show { display: flex; }
+  .filter-bar-label { color: var(--muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; }
+  .filter-chip {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    background: rgba(245,158,11,0.18); color: #fcd34d;
+    padding: 0.25rem 0.6rem; border-radius: 6px; font-weight: 600; font-size: 0.85rem;
+  }
+  .filter-chip .x {
+    cursor: pointer; opacity: 0.7; font-weight: 800; margin-left: 0.2rem;
+  }
+  .filter-chip .x:hover { opacity: 1; }
+  .filter-bar .filter-reset { display: inline-block; margin-left: auto; }
+
+  /* CLICKABLE CHART HINT */
+  .chart-box.clickable { cursor: pointer; }
+  .chart-box.clickable::after {
+    content: 'Click to drill down';
+    position: absolute; bottom: 6px; right: 10px; font-size: 0.68rem;
+    color: var(--muted); opacity: 0; transition: opacity 0.2s;
+    background: rgba(10,13,18,0.85); padding: 2px 8px; border-radius: 4px;
+  }
+  .chart-box.clickable:hover::after { opacity: 1; }
+
   /* FOOTER */
   footer {
     margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border);
@@ -220,8 +250,15 @@
   <div class="status-bar">
     <span class="status-pill"><span class="dot red"></span> Action required</span>
     <span class="status-pill">📍 Site: Troppy</span>
-    <span class="status-pill">🔧 3 fleet classes</span>
+    <span class="status-pill" id="fleetStatusPill">🔧 3 fleet classes</span>
     <span class="status-pill">📅 31 days</span>
+  </div>
+
+  <div class="filter-bar" id="filterBar">
+    <span class="filter-bar-label">🔍 Active filters</span>
+    <span class="filter-chip" id="fleetChip" style="display:none;">Fleet: <strong id="fleetChipName"></strong> <span class="x" id="fleetChipX">✕</span></span>
+    <span class="filter-chip" id="assetChip" style="display:none;">Asset: <strong id="assetChipName"></strong> <span class="x" id="assetChipX">✕</span></span>
+    <button class="filter-reset show" id="filterReset">✕ Clear all</button>
   </div>
 
   <div class="insight">
@@ -293,9 +330,9 @@
     <div class="card col-7">
       <div class="card-head">
         <div class="card-title">Top Equipment · Total Downtime</div>
-        <div class="card-tag">Top 10 assets</div>
+        <div class="card-tag">Top 10 assets · click to drill down</div>
       </div>
-      <div class="chart-box"><canvas id="topEqChart"></canvas></div>
+      <div class="chart-box clickable" data-drill="topEq"><canvas id="topEqChart"></canvas></div>
     </div>
   </div>
 
@@ -304,9 +341,9 @@
     <div class="card col-6">
       <div class="card-head">
         <div class="card-title">Top Breakdown Offenders</div>
-        <div class="card-tag">Most reactive orders</div>
+        <div class="card-tag">Most reactive orders · click to drill down</div>
       </div>
-      <div class="chart-box"><canvas id="topBdChart"></canvas></div>
+      <div class="chart-box clickable" data-drill="topBd"><canvas id="topBdChart"></canvas></div>
     </div>
     <div class="card col-6">
       <div class="card-head">
@@ -344,11 +381,14 @@ Chart.defaults.borderColor = '#1f2937';
 Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif';
 
 // ─── STATE ────────────────────────────────────────────────────
-let currentFilter = null; // null = all, else 'Loaders' | 'Trucks' | 'Drills'
+let currentFilter = null;  // null = all, else 'Loaders' | 'Trucks' | 'Drills'
+let assetFilter = null;    // null = all, else equipment code e.g. 'LO0562'
 
 // ─── AGGREGATE FROM ROWS ──────────────────────────────────────
-function aggregate(filterName) {
-  const rows = DATA.rows.filter(r => !filterName || eqToFleet(r.e) === filterName);
+function aggregate(filterName, asset) {
+  let rows = DATA.rows;
+  if (filterName) rows = rows.filter(r => eqToFleet(r.e) === filterName);
+  if (asset) rows = rows.filter(r => r.e === asset);
   const total = rows.length;
   const totalHrs = rows.reduce((s, r) => s + r.h, 0);
   const bd = rows.filter(r => r.t === '61');
@@ -489,7 +529,9 @@ function renderWorstTable(agg) {
 // ─── RENDER INSIGHT ───────────────────────────────────────────
 function renderInsight(agg) {
   const el = document.querySelector('.insight-text');
-  if (currentFilter) {
+  if (assetFilter) {
+    el.innerHTML = `Drilled into <strong>${assetFilter}</strong> — <strong>${fmtInt(agg.total)}</strong> work orders, <strong>${fmtInt(agg.totalHrs)}</strong> hours. Breakdown share: <strong>${agg.bdPct}%</strong> (${agg.bdCnt} orders). MTTR: <strong>${agg.mttr}</strong> hrs.${currentFilter ? ' (within ' + currentFilter + ')' : ''}`;
+  } else if (currentFilter) {
     el.innerHTML = `Showing <strong>${currentFilter}</strong> only — <strong>${fmtInt(agg.total)}</strong> work orders, <strong>${fmtInt(agg.totalHrs)}</strong> hours. Breakdown share: <strong>${agg.bdPct}%</strong> (${agg.bdCnt} orders). MTTR: <strong>${agg.mttr}</strong> hrs.`;
   } else {
     el.innerHTML = `<strong>42.6%</strong> of all maintenance hours in May were reactive (breakdown). With 466 breakdown orders against only 141 planned PMs, the ratio is roughly <strong>3.3 breakdowns per PM</strong> — a strong signal that preventive coverage is under-resourced or scheduled too far apart. <strong>Loaders</strong> dominate downtime (1,937 hrs, 41% of total).`;
@@ -498,9 +540,25 @@ function renderInsight(agg) {
 
 // ─── RENDER HEADER META ───────────────────────────────────────
 function renderMeta() {
-  document.querySelector('.status-pill:nth-child(3)').textContent =
-    currentFilter ? `🔧 ${currentFilter} only` : '🔧 3 fleet classes';
-  document.getElementById('filterReset').classList.toggle('show', !!currentFilter);
+  const pill = document.getElementById('fleetStatusPill');
+  let label = '🔧 3 fleet classes';
+  if (assetFilter) label = `🎯 ${assetFilter}`;
+  else if (currentFilter) label = `🔧 ${currentFilter} only`;
+  pill.textContent = label;
+
+  // Filter bar
+  const bar = document.getElementById('filterBar');
+  const fc = document.getElementById('fleetChip');
+  const ac = document.getElementById('assetChip');
+  if (currentFilter) {
+    fc.style.display = 'inline-flex';
+    document.getElementById('fleetChipName').textContent = currentFilter;
+  } else fc.style.display = 'none';
+  if (assetFilter) {
+    ac.style.display = 'inline-flex';
+    document.getElementById('assetChipName').textContent = assetFilter;
+  } else ac.style.display = 'none';
+  bar.classList.toggle('show', !!(currentFilter || assetFilter));
 }
 
 // ─── CHARTS (built once, updated in place) ────────────────────
@@ -553,6 +611,17 @@ function buildCharts() {
       scales: {
         x: { grid: { color: '#1f2937' }, ticks: { callback: v => v + 'h' } },
         y: { grid: { display: false } }
+      },
+      onClick: (e, els) => {
+        if (els.length) {
+          const idx = els[0].index;
+          const eq = topEqChart.data.labels[idx];
+          if (eq) {
+            // Toggle: clicking the same asset clears the filter
+            assetFilter = (assetFilter === eq) ? null : eq;
+            render();
+          }
+        }
       }
     }
   });
@@ -568,6 +637,16 @@ function buildCharts() {
       scales: {
         x: { grid: { color: '#1f2937' }, ticks: { stepSize: 5 } },
         y: { grid: { display: false } }
+      },
+      onClick: (e, els) => {
+        if (els.length) {
+          const idx = els[0].index;
+          const eq = topBdChart.data.labels[idx];
+          if (eq) {
+            assetFilter = (assetFilter === eq) ? null : eq;
+            render();
+          }
+        }
       }
     }
   });
@@ -577,6 +656,17 @@ function updateCharts(agg) {
   // Trend
   trendChart.data.labels = agg.daily.map(d => d.d.slice(5));
   trendChart.data.datasets[0].data = agg.daily.map(d => d.h);
+  // Trend color matches active filter
+  if (assetFilter) {
+    trendChart.data.datasets[0].borderColor = palette.red;
+    trendChart.data.datasets[0].backgroundColor = 'rgba(239,68,68,0.18)';
+  } else if (currentFilter) {
+    trendChart.data.datasets[0].borderColor = palette.orange;
+    trendChart.data.datasets[0].backgroundColor = 'rgba(249,115,22,0.18)';
+  } else {
+    trendChart.data.datasets[0].borderColor = palette.amber;
+    trendChart.data.datasets[0].backgroundColor = 'rgba(245,158,11,0.15)';
+  }
   trendChart.update('none');
 
   // Mix donut
@@ -584,26 +674,30 @@ function updateCharts(agg) {
   mixChart.data.datasets[0].data = agg.typeBreakdown.map(t => t.hrs);
   mixChart.update('none');
 
-  // Top equipment by hrs
+  // Top equipment by hrs — highlight selected asset
   topEqChart.data.labels = agg.topEq.map(e => e.eq);
   topEqChart.data.datasets[0].data = agg.topEq.map(e => e.hrs);
-  topEqChart.data.datasets[0].backgroundColor = agg.topEq.map((_, i) =>
-    i === 0 ? palette.red : i < 3 ? palette.orange : palette.amber
-  );
+  topEqChart.data.datasets[0].backgroundColor = agg.topEq.map((_, i) => {
+    const isSelected = agg.topEq[i].eq === assetFilter;
+    if (isSelected) return palette.red;
+    return i === 0 ? palette.orange : i < 3 ? palette.amber : palette.amber + '99';
+  });
   topEqChart.update('none');
 
-  // Top breakdown offenders
+  // Top breakdown offenders — highlight selected asset
   topBdChart.data.labels = agg.topEqBd.map(e => e.eq);
   topBdChart.data.datasets[0].data = agg.topEqBd.map(e => e.count);
-  topBdChart.data.datasets[0].backgroundColor = agg.topEqBd.map((_, i) =>
-    i === 0 ? palette.red : i < 3 ? palette.orange : palette.pink
-  );
+  topBdChart.data.datasets[0].backgroundColor = agg.topEqBd.map((_, i) => {
+    const isSelected = agg.topEqBd[i].eq === assetFilter;
+    if (isSelected) return palette.red;
+    return i === 0 ? palette.orange : i < 3 ? palette.pink : palette.pink + '99';
+  });
   topBdChart.update('none');
 }
 
 // ─── MAIN RENDER ──────────────────────────────────────────────
 function render() {
-  const agg = aggregate(currentFilter);
+  const agg = aggregate(currentFilter, assetFilter);
   renderFleetList(agg);
   renderKPIs(agg);
   renderWorstTable(agg);
@@ -615,6 +709,15 @@ function render() {
 // ─── INIT ─────────────────────────────────────────────────────
 document.getElementById('filterReset').addEventListener('click', () => {
   currentFilter = null;
+  assetFilter = null;
+  render();
+});
+document.getElementById('fleetChipX').addEventListener('click', () => {
+  currentFilter = null;
+  render();
+});
+document.getElementById('assetChipX').addEventListener('click', () => {
+  assetFilter = null;
   render();
 });
 
